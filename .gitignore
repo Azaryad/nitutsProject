@@ -1,3 +1,9 @@
+# Sample project clone (guidance only, not tracked)
+cloned/
+
+# MCP config (local only)
+.mcp.json
+
 # OS
 .DS_Store
 Thumbs.db
