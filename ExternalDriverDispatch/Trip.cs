@@ -148,7 +148,7 @@ namespace ExternalDriverDispatch
             cmd.Parameters.AddWithValue("@priceToDriver", this.priceToDriver);
             cmd.Parameters.AddWithValue("@status", TripStatusHelper.ToDb(this.status));
             cmd.Parameters.AddWithValue("@createdAt", this.createdAt);
-            cmd.Parameters.AddWithValue("@region_id", this.region.getId());
+            cmd.Parameters.AddWithValue("@region_id", this.region != null ? (object)this.region.getId() : DBNull.Value);
             cmd.Parameters.AddWithValue("@distanceKm", this.distanceKm);
             cmd.Parameters.AddWithValue("@estimatedDurationMinutes", this.estimatedDurationMinutes);
             cmd.Parameters.AddWithValue("@offerCounter", this.offerCounter);
@@ -175,7 +175,7 @@ namespace ExternalDriverDispatch
             cmd.Parameters.AddWithValue("@priceToDriver", this.priceToDriver);
             cmd.Parameters.AddWithValue("@status", TripStatusHelper.ToDb(this.status));
             cmd.Parameters.AddWithValue("@createdAt", this.createdAt);
-            cmd.Parameters.AddWithValue("@region_id", this.region.getId());
+            cmd.Parameters.AddWithValue("@region_id", this.region != null ? (object)this.region.getId() : DBNull.Value);
             cmd.Parameters.AddWithValue("@distanceKm", this.distanceKm);
             cmd.Parameters.AddWithValue("@estimatedDurationMinutes", this.estimatedDurationMinutes);
             cmd.Parameters.AddWithValue("@offerCounter", this.offerCounter);
@@ -315,6 +315,23 @@ namespace ExternalDriverDispatch
             SC.execute_non_query(cmd);
         }
 
+        /// <summary>confirmed → completed: the trip is done and moved to the archive.</summary>
+        public bool moveToArchive()
+        {
+            if (this.status != TripStatus.confirmed)
+            {
+                MessageBox.Show("Only a 'Confirmed' trip can be archived", "Error", MessageBoxButtons.OK);
+                return false;
+            }
+            SqlCommand cmd = new SqlCommand();
+            cmd.CommandText = "EXECUTE sp_Trip_archive @trip_id";
+            cmd.Parameters.AddWithValue("@trip_id", this.tripId);
+            SQL_CON SC = new SQL_CON();
+            SC.execute_non_query(cmd);
+            this.status = TripStatus.completed;
+            return true;
+        }
+
         // =====================================================================
         // מתודות סטטיות — טעינה, חיפוש, מזהה הבא
         // =====================================================================
@@ -345,12 +362,10 @@ namespace ExternalDriverDispatch
                 decimal price = Convert.ToDecimal(rdr.GetValue(9));
                 TripStatus status = TripStatusHelper.FromDb(rdr.GetValue(10).ToString());
                 DateTime createdAt = Convert.ToDateTime(rdr.GetValue(11));
-                int regionId = Convert.ToInt32(rdr.GetValue(12));
+                Region region = rdr.GetValue(12) == DBNull.Value ? null : Region.seekRegion(Convert.ToInt32(rdr.GetValue(12)));
                 double distanceKm = Convert.ToDouble(rdr.GetValue(13));
                 int estDuration = Convert.ToInt32(rdr.GetValue(14));
                 int offerCounter = Convert.ToInt32(rdr.GetValue(15));
-
-                Region region = Region.seekRegion(regionId);
 
                 Trip t = new Trip(id, bookingId, pickupAddr, dropoffAddr, pickupCity, dropoffCity,
                     pickupTime, numPassengers, vt, price, status, createdAt, region, false);

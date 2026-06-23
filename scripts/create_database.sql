@@ -70,7 +70,7 @@ CREATE TABLE Trip (
     status            NVARCHAR(20)   NOT NULL
         CHECK (status IN ('open', 'assigned_to_region', 'offered', 'confirmed', 'completed', 'cancelled', 'manual_assignment')),
     createdAt         DATETIME2      NOT NULL,
-    region_id         INT            NOT NULL,  -- nullable would mean unassigned-to-region; domain says assign before dispatch
+    region_id         INT            NULL,  -- NULL = not yet assigned to a region (trips arrive unassigned from Ride Control)
     -- Maps-derived (Service 1). Default to the offline fallback (0 km / 60 min) until enriched.
     distanceKm                FLOAT NOT NULL DEFAULT 0,
     estimatedDurationMinutes  INT   NOT NULL DEFAULT 60,

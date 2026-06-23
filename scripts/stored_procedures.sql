@@ -219,7 +219,7 @@ CREATE OR ALTER PROCEDURE sp_Trip_create
     @priceToDriver      DECIMAL(10,2),
     @status             NVARCHAR(20),
     @createdAt          DATETIME2,
-    @region_id          INT,
+    @region_id          INT = NULL,
     -- defaults so callers that predate Maps enrichment (e.g. seed_data.sql) still work;
     -- the C# always passes explicit values.
     @distanceKm                FLOAT = 0,
@@ -254,7 +254,7 @@ CREATE OR ALTER PROCEDURE sp_Trip_update
     @priceToDriver      DECIMAL(10,2),
     @status             NVARCHAR(20),
     @createdAt          DATETIME2,
-    @region_id          INT,
+    @region_id          INT = NULL,
     @distanceKm                FLOAT,
     @estimatedDurationMinutes  INT,
     @offerCounter              INT = 0
@@ -551,6 +551,25 @@ BEGIN
         BEGIN TRAN;
         UPDATE Trip SET status = N'manual_assignment'
         WHERE trip_id = @trip_id AND status IN (N'assigned_to_region', N'offered');
+        COMMIT TRAN;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+        THROW;
+    END CATCH
+END
+GO
+
+-- Trip.moveToArchive(): confirmed -> completed
+CREATE OR ALTER PROCEDURE sp_Trip_archive
+    @trip_id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        BEGIN TRAN;
+        UPDATE Trip SET status = N'completed'
+        WHERE trip_id = @trip_id AND status = N'confirmed';
         COMMIT TRAN;
     END TRY
     BEGIN CATCH
