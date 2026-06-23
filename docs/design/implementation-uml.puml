@@ -1,0 +1,716 @@
+' PlantUML companion for docs/design/implementation-uml.md
+' Render all diagrams in one run:
+'   plantuml docs/design/implementation-uml.puml
+
+@startuml obligation_tiers
+title Obligation tiers - course-required vs extra
+top to bottom direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam rectangle {
+  RoundCorner 8
+}
+
+package "COURSE-OBLIGATED - required by the Part B model + PATTERNS.md" as OB #DBEAFE {
+  rectangle "Entities:\nRegion, ExternalDriver, Trip, Offer, Message" as obEnt #DBEAFE
+  rectangle "Enums:\nVehicleType, TripStatus, OfferStatus, MessageDirection" as obEnum #DBEAFE
+  rectangle "RideControlSystem <<interface>>\n(external contract)" as obIface #DBEAFE
+  rectangle "Service abstractions (interfaces):\nIDriveInfoProvider, IDriverRanker,\nIMessageComposer, IReplyInterpreter,\nIRestrictionParser, IMessageChannel" as obSvcIface #DBEAFE
+  rectangle "Entity-pattern infra:\nSQL_CON, Program, mainForm, LoginPanel,\nDispatcherHomePanel, RegionPanel, ExternalDriverPanel,\nTripPanel, OfferPanel" as obInfra #DBEAFE
+  rectangle "6 UC flows:\nView Open Trips, Assign Trip to Region,\nSend Trip Offer (UC17), Respond to Trip Offer (UC07),\nForward Offer, Update Ride Control (UC08)" as obUC #DBEAFE
+}
+
+package "EXTRA - enhancements we added (not required to model)" as EX #FEF3C7 {
+  rectangle "Orchestration:\nDispatchService, ServiceFactory, Config" as exOrch #FEF3C7
+  rectangle "Live integrations:\nGoogleMapsDriveInfoProvider, ClaudeAiService,\nTwilioWhatsAppChannel, WhatsAppCloudChannel" as exLive #FEF3C7
+  rectangle "Offline fallbacks:\nStaticDriveInfoProvider, ProximityDriverRanker,\nTemplateMessageComposer, KeywordReplyInterpreter,\nKeywordRestrictionParser, LoggingChannel" as exFall #FEF3C7
+  rectangle "Integrated UI:\nDispatchBoardPanel, MessagePanel" as exBoard #FEF3C7
+  rectangle "Real inbound:\nWebhookServer + ngrok tunnel + Twilio webhook auto-update" as exReal #FEF3C7
+  rectangle "Reports:\nDriverPerformancePanel + sp_DriverPerformance" as exReport #FEF3C7
+  rectangle "Settings:\nSettingsPanel (per-service live/offline)" as exSettings #FEF3C7
+  rectangle "Visual design:\nUiTheme" as exTheme #FEF3C7
+}
+@enduml
+
+@startuml layer_dependency_overview
+title Layer dependency overview
+top to bottom direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam rectangle {
+  RoundCorner 8
+}
+
+package "UI layer - WinForms panels (single window)" as UI {
+  rectangle "mainForm" as MF
+  rectangle "DispatchBoardPanel\n(the routine flow)" as Board
+  rectangle "RegionPanel, ExternalDriverPanel\nTripPanel, OfferPanel, MessagePanel" as CRUD
+  rectangle "LoginPanel, SettingsPanel\nDriverPerformancePanel (NFR/report screens)" as Tech
+}
+
+package "Orchestration" as ORCH {
+  rectangle "DispatchService\n(end-to-end algorithm)" as Svc
+  rectangle "ServiceFactory\n(per-service live/offline)" as Factory
+  rectangle "Config" as Config
+}
+
+package "External services - behind C# interfaces (offline-first)" as SVCLAYER {
+  rectangle "IDriveInfoProvider\nStatic / GoogleMaps" as Maps
+  rectangle "IDriverRanker, IMessageComposer\nIReplyInterpreter, IRestrictionParser\n(Keyword/Proximity / ClaudeAiService)" as AI
+  rectangle "IMessageChannel\nLogging / Twilio / Meta" as WA
+}
+
+package "Domain - entity pattern (each owns its SPs)" as DOMAIN {
+  rectangle "Region, ExternalDriver, Trip\nOffer, Message (+ enums)" as Ent
+  rectangle "Program\n(in-memory static lists)" as Prog
+}
+
+package "Persistence" as DATA {
+  rectangle "SQL_CON" as SC
+  database "SQL Server\nExternalDriverDispatch" as DB
+}
+
+rectangle "WebhookServer + ngrok tunnel\n(real inbound WhatsApp)" as Webhook
+
+MF --> Board
+MF --> CRUD
+MF --> Tech
+Board --> Svc
+Board ..> Webhook
+Webhook ..> Board : OnReply
+Svc --> Maps
+Svc --> AI
+Svc --> WA
+Svc ..> Factory : resolves impls
+Factory ..> Config
+Svc --> Ent
+CRUD --> Ent
+Tech --> Ent
+Ent --> Prog
+Ent --> SC
+SC --> DB
+@enduml
+
+@startuml domain_model
+title Domain model - entities, enums, in-memory store, DB gateway
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+hide empty members
+
+class Program <<static>> #DBEAFE {
+  {static} +Regions: List<Region>
+  {static} +ExternalDrivers: List<ExternalDriver>
+  {static} +Trips: List<Trip>
+  {static} +Offers: List<Offer>
+  {static} +Messages: List<Message>
+  {static} +initLists(): void
+  {static} +Main(): void
+}
+
+class SQL_CON #DBEAFE {
+  {static} +SuppressSuccessMessages: bool
+  +execute_non_query(command: SqlCommand): void
+  +execute_query(command: SqlCommand): SqlDataReader
+}
+
+class Region #DBEAFE {
+  -regionId: int
+  -name: string
+  -country: string
+  -city: string
+  -drivers: List<ExternalDriver>
+  -trips: List<Trip>
+  +getActiveDrivers(): List<ExternalDriver>
+  +getOpenTrips(): List<Trip>
+  +getEligibleDrivers(trip: Trip): List<ExternalDriver>
+  {static} +initRegions(): void
+  {static} +seekRegion(id: int): Region
+}
+
+class ExternalDriver #DBEAFE {
+  -driverId: int
+  -drivercode: string
+  -name: string
+  -phone: string
+  -homeCity: string
+  -vehicleType: VehicleType
+  -worksShabbat: bool
+  -worksNights: bool
+  -worksLongDistance: bool
+  -active: bool
+  -regions: List<Region>
+  +isEligibleForTrip(trip: Trip): bool
+  +getMaxPassengers(): int
+  +updateExternalDriver(): void
+}
+
+class Trip #DBEAFE {
+  -tripId: int
+  -externalBookingId: string
+  -pickupTime: DateTime
+  -numPassengers: int
+  -vehicleType: VehicleType
+  -priceToDriver: decimal
+  -status: TripStatus
+  -distanceKm: double
+  -estimatedDurationMinutes: int
+  -region: Region
+  -offers: List<Offer>
+  +offer(): bool
+  +confirm(): bool
+  +requeue(): bool
+  +unassign(): bool
+  +updateTrip(): void
+}
+
+class Offer #DBEAFE {
+  -offerId: int
+  -trip: Trip
+  -driver: ExternalDriver
+  -sentAt: DateTime
+  -expiresAt: DateTime
+  -status: OfferStatus
+  -driverReplyText: string
+  -aiInterpretation: string
+  -rankPosition: int
+  -rankReason: string
+  +accept(): bool
+  +reject(): bool
+  +markPendingApproval(): bool
+  +timeout(): bool
+  +generateApprovalUrl(): string
+  +updateOffer(): void
+}
+
+class Message #DBEAFE {
+  -messageId: int
+  -driver: ExternalDriver
+  -offer: Offer
+  -direction: MessageDirection
+  -waMessageId: string
+  -body: string
+  -timestamp: DateTime
+  +createMessage(): void
+}
+
+class ExternalDriverRegion <<static>> #DBEAFE {
+  {static} +initExternalDriverRegions(): void
+}
+
+enum VehicleType #DBEAFE {
+  sedan
+  executive_minivan
+  minivan
+  minibus_15
+  minibus_18
+}
+
+enum TripStatus #DBEAFE {
+  open
+  offered
+  confirmed
+  completed
+  cancelled
+  unassigned
+}
+
+enum OfferStatus #DBEAFE {
+  pending
+  pending_approval
+  accepted
+  rejected
+  timeout
+  approval_timeout
+  cancelled
+}
+
+enum MessageDirection #DBEAFE {
+  inbound
+  outbound
+}
+
+Region "1" --> "0..*" Trip : trips
+Region "*" --> "*" ExternalDriver : drivers
+Trip "*" --> "1" Region : region
+Trip "1" --> "0..*" Offer : offers
+Offer "0..*" --> "1" ExternalDriver : driver
+Message "0..*" --> "1" ExternalDriver : driver
+Message "0..*" --> "0..1" Offer : offer
+ExternalDriverRegion ..> ExternalDriver : wires both ways
+ExternalDriverRegion ..> Region : wires both ways
+
+Trip ..> TripStatus
+Trip ..> VehicleType
+Offer ..> OfferStatus
+ExternalDriver ..> VehicleType
+Message ..> MessageDirection
+
+Program o-- "0..*" Region
+Program o-- "0..*" ExternalDriver
+Program o-- "0..*" Trip
+Program o-- "0..*" Offer
+Program o-- "0..*" Message
+
+Region ..> SQL_CON
+ExternalDriver ..> SQL_CON
+Trip ..> SQL_CON
+Offer ..> SQL_CON
+Message ..> SQL_CON
+
+note bottom
+  Course-obligated layer: entities, enums, SQL_CON, Program, and entity-pattern behavior.
+  ExternalDriverRegion is a static loader, not a domain entity.
+end note
+@enduml
+
+@startuml external_services_layer
+title External services layer - interfaces, fallbacks, live implementations, orchestrator
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+hide empty members
+
+interface IDriveInfoProvider #DBEAFE {
+  +GetDriveInfo(origin, destination, pickupTime): DriveInfo
+}
+class StaticDriveInfoProvider #FEF3C7
+class GoogleMapsDriveInfoProvider #FEF3C7
+
+interface IDriverRanker #DBEAFE {
+  +Rank(trip: Trip, eligible: IEnumerable<ExternalDriver>): IReadOnlyList<RankedDriver>
+}
+interface IMessageComposer #DBEAFE {
+  +OfferMessage(driver: ExternalDriver, trip: Trip, link: string): string
+}
+interface IReplyInterpreter #DBEAFE {
+  +Interpret(driverName: string, replyText: string): ReplyIntent
+}
+interface IRestrictionParser #DBEAFE {
+  +Parse(freeText: string): DriverAvailabilityUpdate
+}
+class ProximityDriverRanker #FEF3C7
+class TemplateMessageComposer #FEF3C7
+class KeywordReplyInterpreter #FEF3C7
+class KeywordRestrictionParser #FEF3C7
+class ClaudeAiService #FEF3C7 {
+  -apiKey: string
+  -model: string
+  -Call(system: string, user: string): string
+}
+
+interface IMessageChannel #DBEAFE {
+  +SendText(phone: string, body: string): string
+  +SendTemplate(phone: string, contentSid: string, variables: object, fallbackBody: string): string
+  +SendDocument(phone: string, pdf: byte[], filename: string): string
+}
+class LoggingChannel #FEF3C7
+class WhatsAppCloudChannel #FEF3C7
+class TwilioWhatsAppChannel #FEF3C7
+
+class DispatchService #FEF3C7 {
+  +Log: Action<string>
+  -maps: IDriveInfoProvider
+  -ranker: IDriverRanker
+  -composer: IMessageComposer
+  -interpreter: IReplyInterpreter
+  -restrictionParser: IRestrictionParser
+  -channel: IMessageChannel
+  +EnrichTrip(trip: Trip): void
+  +RankEligible(trip: Trip): IReadOnlyList<RankedDriver>
+  +SendOffer(trip: Trip, ranked: RankedDriver): Offer
+  +HandleDriverReply(offer: Offer, replyText: string): ReplyIntent
+  +Forward(trip: Trip): Offer
+}
+
+class ServiceFactory <<static>> #FEF3C7 {
+  {static} +DriveInfo(): IDriveInfoProvider
+  {static} +Ranker(): IDriverRanker
+  {static} +Composer(): IMessageComposer
+  {static} +Interpreter(): IReplyInterpreter
+  {static} +RestrictionParser(): IRestrictionParser
+  {static} +Channel(): IMessageChannel
+  {static} +ModeSummary(): string
+}
+
+class Config <<static>> #FEF3C7 {
+  {static} +MapsEnabled: bool
+  {static} +AiEnabled: bool
+  {static} +WhatsAppEnabled: bool
+  {static} +WhatsAppProvider: string
+  {static} +Reload(): void
+  {static} +Save(values): void
+}
+
+class RankedDriver <<record>> #FEF3C7 {
+  +Driver: ExternalDriver
+  +Rank: int
+  +Reason: string
+}
+
+class DriveInfo <<record>> #FEF3C7 {
+  +DurationMinutes: int
+  +DistanceKm: double
+}
+
+class DriverAvailabilityUpdate #FEF3C7 {
+  +WorksNights: bool?
+  +WorksShabbat: bool?
+  +WorksLongDistance: bool?
+  +Active: bool?
+}
+
+enum ReplyIntent #FEF3C7 {
+  Yes
+  No
+  Ambiguous
+}
+
+StaticDriveInfoProvider ..|> IDriveInfoProvider
+GoogleMapsDriveInfoProvider ..|> IDriveInfoProvider
+ProximityDriverRanker ..|> IDriverRanker
+TemplateMessageComposer ..|> IMessageComposer
+KeywordReplyInterpreter ..|> IReplyInterpreter
+KeywordRestrictionParser ..|> IRestrictionParser
+ClaudeAiService ..|> IDriverRanker
+ClaudeAiService ..|> IMessageComposer
+ClaudeAiService ..|> IReplyInterpreter
+ClaudeAiService ..|> IRestrictionParser
+LoggingChannel ..|> IMessageChannel
+WhatsAppCloudChannel ..|> IMessageChannel
+TwilioWhatsAppChannel ..|> IMessageChannel
+
+ClaudeAiService --> ProximityDriverRanker : fallback
+ClaudeAiService --> TemplateMessageComposer : fallback
+ClaudeAiService --> KeywordReplyInterpreter : fallback
+ClaudeAiService --> KeywordRestrictionParser : fallback
+
+DispatchService --> IDriveInfoProvider : maps
+DispatchService --> IDriverRanker : ranker
+DispatchService --> IMessageComposer : composer
+DispatchService --> IReplyInterpreter : interpreter
+DispatchService --> IRestrictionParser : restrictionParser
+DispatchService --> IMessageChannel : channel
+DispatchService ..> ServiceFactory : resolves impls
+ServiceFactory ..> Config
+DispatchService ..> Trip
+DispatchService ..> Offer
+DispatchService ..> Message
+
+note bottom
+  Interfaces are the course-obligated service boundary.
+  Concrete API clients, offline fallbacks, DispatchService, ServiceFactory, and Config are extra.
+end note
+@enduml
+
+@startuml ui_infrastructure_layer
+title UI / infrastructure layer - single-window panel navigation
+top to bottom direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+hide empty members
+
+class mainForm #DBEAFE {
+  {static} -instance: mainForm
+  +showPanel(control: UserControl): void
+}
+class LoginPanel #DBEAFE
+class DispatcherHomePanel #DBEAFE
+class DispatchBoardPanel #FEF3C7 {
+  -svc: DispatchService
+  -selectedTrip: Trip
+  -ranked: List<RankedDriver>
+  {static} -_webhookServer: WebhookServer
+  +btnAssignRegion_Click()
+  +btnSendOffer_Click()
+  +btnReceiveReply_Click()
+  +btnWhatsappYes_Click()
+  +btnApprove_Click()
+  +btnDecline_Click()
+  +btnTimeout_Click()
+  +handleWebhookReply(phone: string, body: string)
+}
+class RegionPanel #DBEAFE
+class ExternalDriverPanel #DBEAFE
+class TripPanel #DBEAFE
+class OfferPanel #DBEAFE
+class MessagePanel #FEF3C7
+class SettingsPanel #FEF3C7
+class DriverPerformancePanel #FEF3C7
+class WebhookServer #FEF3C7 {
+  +OnReply: Action<string, string>
+  +Port: int
+  +Start(): void
+}
+class UiTheme <<static>> #FEF3C7 {
+  {static} +Apply(control: Control): void
+}
+
+mainForm --> LoginPanel
+mainForm --> DispatcherHomePanel
+mainForm --> DispatchBoardPanel
+LoginPanel ..> DispatcherHomePanel
+DispatcherHomePanel --> DispatchBoardPanel
+DispatcherHomePanel --> RegionPanel
+DispatcherHomePanel --> ExternalDriverPanel
+DispatcherHomePanel --> TripPanel
+DispatcherHomePanel --> OfferPanel
+DispatcherHomePanel --> MessagePanel
+DispatcherHomePanel --> SettingsPanel
+DispatcherHomePanel --> DriverPerformancePanel
+DispatchBoardPanel --> DispatchService
+DispatchBoardPanel --> WebhookServer
+WebhookServer ..> DispatchBoardPanel : OnReply callback
+SettingsPanel ..> Config
+DriverPerformancePanel ..> SQL_CON : sp_DriverPerformance
+mainForm ..> UiTheme
+
+note bottom
+  Obligated infrastructure: mainForm, login/home navigation, and entity CRUD panels.
+  Extra screens: dispatch board, audit messages, settings, reports, webhook server, and theme.
+end note
+@enduml
+
+@startuml flow_a_view_open_trips
+title Flow A - View Open Trips
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor Dispatcher as D
+participant "DispatchBoardPanel" as Board
+participant "Program\n(in-memory)" as Prog
+participant Trip
+
+note over Board
+  ctor -> UiTheme.Apply, svc.Log=log,
+  refreshRegionCombo(), loadTrips()
+end note
+Board -> Prog : iterate Program.Trips
+note over Board
+  keep status in {open, offered, unassigned}
+  bind DataTable -> dgvTrips
+end note
+D -> Board : click a trip row (dgvTrips_CellClick)
+Board -> Trip : seekTrip(id)
+Board -> Board : selectedTrip = trip\nrefreshDrivers(); refreshOffers()
+@enduml
+
+@startuml flow_b_assign_trip_to_region
+title Flow B - Assign Trip to Region (includes Maps enrichment)
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor Dispatcher as D
+participant "DispatchBoardPanel" as Board
+participant Trip
+participant "SQL_CON" as SC
+database "SQL Server" as DB
+participant "DispatchService" as Svc
+participant "IDriveInfoProvider" as Maps
+
+D -> Board : select region + "Assign region"\n(btnAssignRegion_Click)
+Board -> Trip : setRegion(region)
+Board -> Trip : updateTrip() (quiet)
+Trip -> SC : execute_non_query(sp_Trip_update)
+SC -> DB : EXEC sp_Trip_update
+Board -> Svc : EnrichTrip(trip)
+Svc -> Maps : GetDriveInfo(pickup, dropoff, pickupTime)
+note over Maps
+  offline: StaticDriveInfoProvider (60 min / 0 km)
+  live: GoogleMapsDriveInfoProvider (Distance Matrix)
+end note
+Maps --> Svc : DriveInfo(minutes, km)
+Svc -> Trip : setDistanceKm / setEstimatedDurationMinutes
+Svc -> Trip : updateTrip() (quiet) -> sp_Trip_update
+note over Svc
+  distanceKm >= 100 => trip tagged long-distance
+end note
+Board -> Board : refreshDrivers(); loadTrips()
+@enduml
+
+@startuml flow_c_send_trip_offer
+title Flow C - Send Trip Offer (UC17)
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor Dispatcher as D
+participant "DispatchBoardPanel" as Board
+participant "DispatchService" as Svc
+participant Region as Reg
+participant "IDriverRanker" as Rank
+participant Offer
+participant Trip
+participant "IMessageComposer" as Comp
+participant "IMessageChannel" as Chan
+participant Message as Msg
+participant "SQL_CON" as SC
+
+note over Board,Svc
+  refreshDrivers() -> RankEligible(trip)
+end note
+Board -> Svc : RankEligible(trip)
+Svc -> Reg : getEligibleDrivers(trip)\n(active + capacity)
+Svc -> Svc : long-distance gate\n(distanceKm >= 100 -> worksLongDistance)
+Svc -> Svc : exclude already-contacted\n(trip.getOffers())
+Svc -> Rank : Rank(trip, eligible)
+note over Rank
+  offline: ProximityDriverRanker
+  live: ClaudeAiService
+end note
+Rank --> Svc : List<RankedDriver> (rank + reason)
+Svc --> Board : ranked drivers -> dgvDrivers
+
+D -> Board : "Send offer" (btnSendOffer_Click)
+Board -> Board : guard status == open;\npickDriverFromGridOrTop()
+Board -> Svc : SendOffer(trip, rd)
+Svc -> Offer : new Offer(pending) -> createOffer()
+Offer -> SC : sp_Offer_create
+Svc -> Offer : setRankReason; updateOffer() -> sp_Offer_update
+Svc -> Trip : offer() open -> offered
+Trip -> SC : sp_Trip_offer
+Svc -> Offer : generateApprovalUrl()
+Svc -> Comp : OfferMessage(driver, trip, url)
+Comp --> Svc : text
+Svc -> Chan : SendTemplate(phone, ContentSid, vars[7], text)
+note over Chan
+  offline: LoggingChannel (LOCAL-id)
+  live: Twilio / Meta
+end note
+Chan --> Svc : waMessageId
+Svc -> Msg : new Message(outbound) -> sp_Message_create
+Svc --> Board : Offer
+Board -> Board : loadTrips(); refreshDrivers(); refreshOffers()
+@enduml
+
+@startuml flow_d_respond_to_trip_offer
+title Flow D - Respond to Trip Offer (UC07)
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor "External Driver" as Drv
+participant "DispatchBoardPanel" as Board
+participant "DispatchService" as Svc
+participant Message as Msg
+participant "IRestrictionParser" as RP
+participant "IReplyInterpreter" as Intp
+participant Offer
+participant Trip
+
+note over Drv,Board
+  reply arrives via txtReply box (btnReceiveReply_Click)
+  OR real WebhookServer.OnReply -> handleWebhookReply
+end note
+Drv -> Board : reply text
+Board -> Svc : HandleDriverReply(offer, text)
+Svc -> Msg : new Message(inbound) -> sp_Message_create
+Svc -> Offer : setDriverReplyText
+Svc -> RP : Parse(text)
+opt availability change detected ("no nights", "on vacation")
+  Svc -> Svc : ApplyRestriction -> driver setters\n+ updateExternalDriver() (sp_ExternalDriver_update)
+end
+Svc -> Intp : Interpret(driverName, text)
+Intp --> Svc : ReplyIntent {Yes | No | Ambiguous}
+Svc -> Offer : setAiInterpretation; updateOffer()
+alt Yes
+  Svc -> Offer : markPendingApproval()\npending -> pending_approval
+else No
+  Svc -> Offer : reject()\noffer -> rejected, trip -> open
+else Ambiguous
+  note over Svc
+    no state change
+    (a clarifying question would be sent)
+  end note
+end
+Svc --> Board : intent
+alt intent == No
+  Board -> Svc : Forward(trip)\nsee Flow E
+end
+
+note over Drv,Board
+  later: driver clicks the approval link (btnApprove_Click)
+end note
+Drv -> Board : approve
+Board -> Offer : accept()\npending/pending_approval -> accepted,\ntrip -> confirmed
+note over Board
+  triggers Update Ride Control - see Flow F
+end note
+@enduml
+
+@startuml flow_e_forward_offer_to_next_driver
+title Flow E - Forward Offer to Next Driver
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+participant "DispatchBoardPanel" as Board
+participant "DispatchService" as Svc
+participant Trip
+
+note over Board
+  from btnDecline_Click / btnTimeout_Click /
+  HandleDriverReply intent == No
+end note
+Board -> Svc : Forward(trip)
+Svc -> Svc : RankEligible(trip)\n(re-rank, excluding already-contacted)
+alt no eligible drivers remain
+  Svc -> Trip : unassign()\nopen -> unassigned
+  note over Svc
+    escalate to manager (logged)
+  end note
+else next driver exists
+  Svc -> Svc : SendOffer(trip, ranked[0])\nrepeats Flow C send half
+end
+@enduml
+
+@startuml flow_f_update_ride_control
+title Flow F - Update Ride Control (UC08)
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor "External Driver" as Drv
+participant "DispatchBoardPanel" as Board
+participant Offer
+participant "SQL_CON" as SC
+database "SQL Server" as DB
+participant "RideControlSystem\n<<interface>>\n(design-only)" as RC
+
+Drv -> Board : click approval link (btnApprove_Click)
+Board -> Offer : accept()
+Offer -> SC : execute_non_query(sp_Offer_accept)
+SC -> DB : BEGIN TRAN:\nOffer = accepted AND Trip = confirmed\nCOMMIT
+Offer -> Offer : in-memory mirror:\nstatus=accepted; trip.status=confirmed
+Board -> Board : log "Ride Control updated"\n(driver name, phone, vehicle)
+note over Board,RC
+  updateTripAssignment() is the external contract.
+  In the running app it is represented by
+  the confirmed-trip side effect + narration.
+end note
+@enduml
+
+@startuml appendix_startup_data_load
+title Appendix - Application startup and data load
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+participant "Program.Main" as Main
+participant "Program.initLists" as Prog
+participant "SQL_CON" as SC
+database "SQL Server" as DB
+participant "mainForm" as Form
+
+Main -> Main : single-instance Mutex guard
+Main -> Prog : initLists()
+Prog -> SC : Region.initRegions() -> sp_Region_get_all
+SC -> DB : SELECT
+Prog -> SC : ExternalDriver.initExternalDrivers() -> sp_ExternalDriver_get_all
+Prog -> SC : ExternalDriverRegion.initExternalDriverRegions()\n(wires driver-region)
+Prog -> SC : Trip.initTrips() -> sp_Trip_get_all
+Prog -> SC : Offer.initOffers() -> sp_Offer_get_all
+Prog -> SC : Message.initMessages() -> sp_Message_get_all
+Main -> Form : Application.Run(new mainForm())
+Form -> Form : showPanel(new LoginPanel())
+
+note bottom
+  Load order is strict: base entities first, FK-bearing entities next,
+  Offer mediator and Message audit trail last.
+end note
+@enduml

@@ -1,0 +1,54 @@
+@startuml flow_c_send_trip_offer
+title Flow C - Send Trip Offer (UC17)
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor Dispatcher as D
+participant "DispatchBoardPanel" as Board
+participant "DispatchService" as Svc
+participant Region as Reg
+participant "IDriverRanker" as Rank
+participant Offer
+participant Trip
+participant "IMessageComposer" as Comp
+participant "IMessageChannel" as Chan
+participant Message as Msg
+participant "SQL_CON" as SC
+
+note over Board,Svc
+  refreshDrivers() -> RankEligible(trip)
+end note
+Board -> Svc : RankEligible(trip)
+Svc -> Reg : getEligibleDrivers(trip)\n(active + capacity)
+Svc -> Svc : long-distance gate\n(distanceKm >= 100 -> worksLongDistance)
+Svc -> Svc : exclude already-contacted\n(trip.getOffers())
+Svc -> Rank : Rank(trip, eligible)
+note over Rank
+  offline: ProximityDriverRanker
+  live: ClaudeAiService
+end note
+Rank --> Svc : List<RankedDriver> (rank + reason)
+Svc --> Board : ranked drivers -> dgvDrivers
+
+D -> Board : "Send offer" (btnSendOffer_Click)
+Board -> Board : guard status == open;\npickDriverFromGridOrTop()
+Board -> Svc : SendOffer(trip, rd)
+Svc -> Offer : new Offer(pending) -> createOffer()
+Offer -> SC : sp_Offer_create
+Svc -> Offer : setRankReason; updateOffer() -> sp_Offer_update
+Svc -> Trip : offer() open -> offered
+Trip -> SC : sp_Trip_offer
+Svc -> Offer : generateApprovalUrl()
+Svc -> Comp : OfferMessage(driver, trip, url)
+Comp --> Svc : text
+Svc -> Chan : SendTemplate(phone, ContentSid, vars[7], text)
+note over Chan
+  offline: LoggingChannel (LOCAL-id)
+  live: Twilio / Meta
+end note
+Chan --> Svc : waMessageId
+Svc -> Msg : new Message(outbound) -> sp_Message_create
+Svc --> Board : Offer
+Board -> Board : loadTrips(); refreshDrivers(); refreshOffers()
+@enduml
+

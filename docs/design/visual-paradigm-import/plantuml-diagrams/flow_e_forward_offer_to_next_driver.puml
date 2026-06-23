@@ -1,0 +1,25 @@
+@startuml flow_e_forward_offer_to_next_driver
+title Flow E - Forward Offer to Next Driver
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+participant "DispatchBoardPanel" as Board
+participant "DispatchService" as Svc
+participant Trip
+
+note over Board
+  from btnDecline_Click / btnTimeout_Click /
+  HandleDriverReply intent == No
+end note
+Board -> Svc : Forward(trip)
+Svc -> Svc : RankEligible(trip)\n(re-rank, excluding already-contacted)
+alt no eligible drivers remain
+  Svc -> Trip : unassign()\nopen -> unassigned
+  note over Svc
+    escalate to manager (logged)
+  end note
+else next driver exists
+  Svc -> Svc : SendOffer(trip, ranked[0])\nrepeats Flow C send half
+end
+@enduml
+

@@ -1,0 +1,139 @@
+@startuml external_services_layer
+title External services layer - interfaces, fallbacks, live implementations, orchestrator
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+hide empty members
+
+interface IDriveInfoProvider #DBEAFE {
+  +GetDriveInfo(origin, destination, pickupTime): DriveInfo
+}
+class StaticDriveInfoProvider #FEF3C7
+class GoogleMapsDriveInfoProvider #FEF3C7
+
+interface IDriverRanker #DBEAFE {
+  +Rank(trip: Trip, eligible: IEnumerable<ExternalDriver>): IReadOnlyList<RankedDriver>
+}
+interface IMessageComposer #DBEAFE {
+  +OfferMessage(driver: ExternalDriver, trip: Trip, link: string): string
+}
+interface IReplyInterpreter #DBEAFE {
+  +Interpret(driverName: string, replyText: string): ReplyIntent
+}
+interface IRestrictionParser #DBEAFE {
+  +Parse(freeText: string): DriverAvailabilityUpdate
+}
+class ProximityDriverRanker #FEF3C7
+class TemplateMessageComposer #FEF3C7
+class KeywordReplyInterpreter #FEF3C7
+class KeywordRestrictionParser #FEF3C7
+class ClaudeAiService #FEF3C7 {
+  -apiKey: string
+  -model: string
+  -Call(system: string, user: string): string
+}
+
+interface IMessageChannel #DBEAFE {
+  +SendText(phone: string, body: string): string
+  +SendTemplate(phone: string, contentSid: string, variables: object, fallbackBody: string): string
+  +SendDocument(phone: string, pdf: byte[], filename: string): string
+}
+class LoggingChannel #FEF3C7
+class WhatsAppCloudChannel #FEF3C7
+class TwilioWhatsAppChannel #FEF3C7
+
+class DispatchService #FEF3C7 {
+  +Log: Action<string>
+  -maps: IDriveInfoProvider
+  -ranker: IDriverRanker
+  -composer: IMessageComposer
+  -interpreter: IReplyInterpreter
+  -restrictionParser: IRestrictionParser
+  -channel: IMessageChannel
+  +EnrichTrip(trip: Trip): void
+  +RankEligible(trip: Trip): IReadOnlyList<RankedDriver>
+  +SendOffer(trip: Trip, ranked: RankedDriver): Offer
+  +HandleDriverReply(offer: Offer, replyText: string): ReplyIntent
+  +Forward(trip: Trip): Offer
+}
+
+class ServiceFactory <<static>> #FEF3C7 {
+  {static} +DriveInfo(): IDriveInfoProvider
+  {static} +Ranker(): IDriverRanker
+  {static} +Composer(): IMessageComposer
+  {static} +Interpreter(): IReplyInterpreter
+  {static} +RestrictionParser(): IRestrictionParser
+  {static} +Channel(): IMessageChannel
+  {static} +ModeSummary(): string
+}
+
+class Config <<static>> #FEF3C7 {
+  {static} +MapsEnabled: bool
+  {static} +AiEnabled: bool
+  {static} +WhatsAppEnabled: bool
+  {static} +WhatsAppProvider: string
+  {static} +Reload(): void
+  {static} +Save(values): void
+}
+
+class RankedDriver <<record>> #FEF3C7 {
+  +Driver: ExternalDriver
+  +Rank: int
+  +Reason: string
+}
+
+class DriveInfo <<record>> #FEF3C7 {
+  +DurationMinutes: int
+  +DistanceKm: double
+}
+
+class DriverAvailabilityUpdate #FEF3C7 {
+  +WorksNights: bool?
+  +WorksShabbat: bool?
+  +WorksLongDistance: bool?
+  +Active: bool?
+}
+
+enum ReplyIntent #FEF3C7 {
+  Yes
+  No
+  Ambiguous
+}
+
+StaticDriveInfoProvider ..|> IDriveInfoProvider
+GoogleMapsDriveInfoProvider ..|> IDriveInfoProvider
+ProximityDriverRanker ..|> IDriverRanker
+TemplateMessageComposer ..|> IMessageComposer
+KeywordReplyInterpreter ..|> IReplyInterpreter
+KeywordRestrictionParser ..|> IRestrictionParser
+ClaudeAiService ..|> IDriverRanker
+ClaudeAiService ..|> IMessageComposer
+ClaudeAiService ..|> IReplyInterpreter
+ClaudeAiService ..|> IRestrictionParser
+LoggingChannel ..|> IMessageChannel
+WhatsAppCloudChannel ..|> IMessageChannel
+TwilioWhatsAppChannel ..|> IMessageChannel
+
+ClaudeAiService --> ProximityDriverRanker : fallback
+ClaudeAiService --> TemplateMessageComposer : fallback
+ClaudeAiService --> KeywordReplyInterpreter : fallback
+ClaudeAiService --> KeywordRestrictionParser : fallback
+
+DispatchService --> IDriveInfoProvider : maps
+DispatchService --> IDriverRanker : ranker
+DispatchService --> IMessageComposer : composer
+DispatchService --> IReplyInterpreter : interpreter
+DispatchService --> IRestrictionParser : restrictionParser
+DispatchService --> IMessageChannel : channel
+DispatchService ..> ServiceFactory : resolves impls
+ServiceFactory ..> Config
+DispatchService ..> Trip
+DispatchService ..> Offer
+DispatchService ..> Message
+
+note bottom
+  Interfaces are the course-obligated service boundary.
+  Concrete API clients, offline fallbacks, DispatchService, ServiceFactory, and Config are extra.
+end note
+@enduml
+

@@ -1,0 +1,173 @@
+@startuml domain_model
+title Domain model - entities, enums, in-memory store, DB gateway
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+hide empty members
+
+class Program <<static>> #DBEAFE {
+  {static} +Regions: List<Region>
+  {static} +ExternalDrivers: List<ExternalDriver>
+  {static} +Trips: List<Trip>
+  {static} +Offers: List<Offer>
+  {static} +Messages: List<Message>
+  {static} +initLists(): void
+  {static} +Main(): void
+}
+
+class SQL_CON #DBEAFE {
+  {static} +SuppressSuccessMessages: bool
+  +execute_non_query(command: SqlCommand): void
+  +execute_query(command: SqlCommand): SqlDataReader
+}
+
+class Region #DBEAFE {
+  -regionId: int
+  -name: string
+  -country: string
+  -city: string
+  -drivers: List<ExternalDriver>
+  -trips: List<Trip>
+  +getActiveDrivers(): List<ExternalDriver>
+  +getOpenTrips(): List<Trip>
+  +getEligibleDrivers(trip: Trip): List<ExternalDriver>
+  {static} +initRegions(): void
+  {static} +seekRegion(id: int): Region
+}
+
+class ExternalDriver #DBEAFE {
+  -driverId: int
+  -drivercode: string
+  -name: string
+  -phone: string
+  -homeCity: string
+  -vehicleType: VehicleType
+  -worksShabbat: bool
+  -worksNights: bool
+  -worksLongDistance: bool
+  -active: bool
+  -regions: List<Region>
+  +isEligibleForTrip(trip: Trip): bool
+  +getMaxPassengers(): int
+  +updateExternalDriver(): void
+}
+
+class Trip #DBEAFE {
+  -tripId: int
+  -externalBookingId: string
+  -pickupTime: DateTime
+  -numPassengers: int
+  -vehicleType: VehicleType
+  -priceToDriver: decimal
+  -status: TripStatus
+  -distanceKm: double
+  -estimatedDurationMinutes: int
+  -region: Region
+  -offers: List<Offer>
+  +offer(): bool
+  +confirm(): bool
+  +requeue(): bool
+  +unassign(): bool
+  +updateTrip(): void
+}
+
+class Offer #DBEAFE {
+  -offerId: int
+  -trip: Trip
+  -driver: ExternalDriver
+  -sentAt: DateTime
+  -expiresAt: DateTime
+  -status: OfferStatus
+  -driverReplyText: string
+  -aiInterpretation: string
+  -rankPosition: int
+  -rankReason: string
+  +accept(): bool
+  +reject(): bool
+  +markPendingApproval(): bool
+  +timeout(): bool
+  +generateApprovalUrl(): string
+  +updateOffer(): void
+}
+
+class Message #DBEAFE {
+  -messageId: int
+  -driver: ExternalDriver
+  -offer: Offer
+  -direction: MessageDirection
+  -waMessageId: string
+  -body: string
+  -timestamp: DateTime
+  +createMessage(): void
+}
+
+class ExternalDriverRegion <<static>> #DBEAFE {
+  {static} +initExternalDriverRegions(): void
+}
+
+enum VehicleType #DBEAFE {
+  sedan
+  executive_minivan
+  minivan
+  minibus_15
+  minibus_18
+}
+
+enum TripStatus #DBEAFE {
+  open
+  offered
+  confirmed
+  completed
+  cancelled
+  unassigned
+}
+
+enum OfferStatus #DBEAFE {
+  pending
+  pending_approval
+  accepted
+  rejected
+  timeout
+  approval_timeout
+  cancelled
+}
+
+enum MessageDirection #DBEAFE {
+  inbound
+  outbound
+}
+
+Region "1" --> "0..*" Trip : trips
+Region "*" --> "*" ExternalDriver : drivers
+Trip "*" --> "1" Region : region
+Trip "1" --> "0..*" Offer : offers
+Offer "0..*" --> "1" ExternalDriver : driver
+Message "0..*" --> "1" ExternalDriver : driver
+Message "0..*" --> "0..1" Offer : offer
+ExternalDriverRegion ..> ExternalDriver : wires both ways
+ExternalDriverRegion ..> Region : wires both ways
+
+Trip ..> TripStatus
+Trip ..> VehicleType
+Offer ..> OfferStatus
+ExternalDriver ..> VehicleType
+Message ..> MessageDirection
+
+Program o-- "0..*" Region
+Program o-- "0..*" ExternalDriver
+Program o-- "0..*" Trip
+Program o-- "0..*" Offer
+Program o-- "0..*" Message
+
+Region ..> SQL_CON
+ExternalDriver ..> SQL_CON
+Trip ..> SQL_CON
+Offer ..> SQL_CON
+Message ..> SQL_CON
+
+note bottom
+  Course-obligated layer: entities, enums, SQL_CON, Program, and entity-pattern behavior.
+  ExternalDriverRegion is a static loader, not a domain entity.
+end note
+@enduml
+

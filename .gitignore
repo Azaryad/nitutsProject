@@ -23,6 +23,11 @@ Thumbs.db
 *.key
 *.pem
 
+# .NET build output
+[Bb]in/
+[Oo]bj/
+*.user
+
 # Node
 node_modules/
 npm-debug.log*

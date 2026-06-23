@@ -1,0 +1,29 @@
+@startuml appendix_startup_data_load
+title Appendix - Application startup and data load
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+participant "Program.Main" as Main
+participant "Program.initLists" as Prog
+participant "SQL_CON" as SC
+database "SQL Server" as DB
+participant "mainForm" as Form
+
+Main -> Main : single-instance Mutex guard
+Main -> Prog : initLists()
+Prog -> SC : Region.initRegions() -> sp_Region_get_all
+SC -> DB : SELECT
+Prog -> SC : ExternalDriver.initExternalDrivers() -> sp_ExternalDriver_get_all
+Prog -> SC : ExternalDriverRegion.initExternalDriverRegions()\n(wires driver-region)
+Prog -> SC : Trip.initTrips() -> sp_Trip_get_all
+Prog -> SC : Offer.initOffers() -> sp_Offer_get_all
+Prog -> SC : Message.initMessages() -> sp_Message_get_all
+Main -> Form : Application.Run(new mainForm())
+Form -> Form : showPanel(new LoginPanel())
+
+note bottom
+  Load order is strict: base entities first, FK-bearing entities next,
+  Offer mediator and Message audit trail last.
+end note
+@enduml
+

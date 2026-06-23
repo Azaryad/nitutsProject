@@ -1,0 +1,59 @@
+@startuml layer_dependency_overview
+title Layer dependency overview
+top to bottom direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam rectangle {
+  RoundCorner 8
+}
+
+package "UI layer - WinForms panels (single window)" as UI {
+  rectangle "mainForm" as MF
+  rectangle "DispatchBoardPanel\n(the routine flow)" as Board
+  rectangle "RegionPanel, ExternalDriverPanel\nTripPanel, OfferPanel, MessagePanel" as CRUD
+  rectangle "LoginPanel, SettingsPanel\nDriverPerformancePanel (NFR/report screens)" as Tech
+}
+
+package "Orchestration" as ORCH {
+  rectangle "DispatchService\n(end-to-end algorithm)" as Svc
+  rectangle "ServiceFactory\n(per-service live/offline)" as Factory
+  rectangle "Config" as Config
+}
+
+package "External services - behind C# interfaces (offline-first)" as SVCLAYER {
+  rectangle "IDriveInfoProvider\nStatic / GoogleMaps" as Maps
+  rectangle "IDriverRanker, IMessageComposer\nIReplyInterpreter, IRestrictionParser\n(Keyword/Proximity / ClaudeAiService)" as AI
+  rectangle "IMessageChannel\nLogging / Twilio / Meta" as WA
+}
+
+package "Domain - entity pattern (each owns its SPs)" as DOMAIN {
+  rectangle "Region, ExternalDriver, Trip\nOffer, Message (+ enums)" as Ent
+  rectangle "Program\n(in-memory static lists)" as Prog
+}
+
+package "Persistence" as DATA {
+  rectangle "SQL_CON" as SC
+  database "SQL Server\nExternalDriverDispatch" as DB
+}
+
+rectangle "WebhookServer + ngrok tunnel\n(real inbound WhatsApp)" as Webhook
+
+MF --> Board
+MF --> CRUD
+MF --> Tech
+Board --> Svc
+Board ..> Webhook
+Webhook ..> Board : OnReply
+Svc --> Maps
+Svc --> AI
+Svc --> WA
+Svc ..> Factory : resolves impls
+Factory ..> Config
+Svc --> Ent
+CRUD --> Ent
+Tech --> Ent
+Ent --> Prog
+Ent --> SC
+SC --> DB
+@enduml
+

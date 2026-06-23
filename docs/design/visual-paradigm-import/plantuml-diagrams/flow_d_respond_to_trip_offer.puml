@@ -1,0 +1,54 @@
+@startuml flow_d_respond_to_trip_offer
+title Flow D - Respond to Trip Offer (UC07)
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor "External Driver" as Drv
+participant "DispatchBoardPanel" as Board
+participant "DispatchService" as Svc
+participant Message as Msg
+participant "IRestrictionParser" as RP
+participant "IReplyInterpreter" as Intp
+participant Offer
+participant Trip
+
+note over Drv,Board
+  reply arrives via txtReply box (btnReceiveReply_Click)
+  OR real WebhookServer.OnReply -> handleWebhookReply
+end note
+Drv -> Board : reply text
+Board -> Svc : HandleDriverReply(offer, text)
+Svc -> Msg : new Message(inbound) -> sp_Message_create
+Svc -> Offer : setDriverReplyText
+Svc -> RP : Parse(text)
+opt availability change detected ("no nights", "on vacation")
+  Svc -> Svc : ApplyRestriction -> driver setters\n+ updateExternalDriver() (sp_ExternalDriver_update)
+end
+Svc -> Intp : Interpret(driverName, text)
+Intp --> Svc : ReplyIntent {Yes | No | Ambiguous}
+Svc -> Offer : setAiInterpretation; updateOffer()
+alt Yes
+  Svc -> Offer : markPendingApproval()\npending -> pending_approval
+else No
+  Svc -> Offer : reject()\noffer -> rejected, trip -> open
+else Ambiguous
+  note over Svc
+    no state change
+    (a clarifying question would be sent)
+  end note
+end
+Svc --> Board : intent
+alt intent == No
+  Board -> Svc : Forward(trip)\nsee Flow E
+end
+
+note over Drv,Board
+  later: driver clicks the approval link (btnApprove_Click)
+end note
+Drv -> Board : approve
+Board -> Offer : accept()\npending/pending_approval -> accepted,\ntrip -> confirmed
+note over Board
+  triggers Update Ride Control - see Flow F
+end note
+@enduml
+

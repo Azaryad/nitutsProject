@@ -1,0 +1,24 @@
+@startuml flow_a_view_open_trips
+title Flow A - View Open Trips
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor Dispatcher as D
+participant "DispatchBoardPanel" as Board
+participant "Program\n(in-memory)" as Prog
+participant Trip
+
+note over Board
+  ctor -> UiTheme.Apply, svc.Log=log,
+  refreshRegionCombo(), loadTrips()
+end note
+Board -> Prog : iterate Program.Trips
+note over Board
+  keep status in {open, offered, unassigned}
+  bind DataTable -> dgvTrips
+end note
+D -> Board : click a trip row (dgvTrips_CellClick)
+Board -> Trip : seekTrip(id)
+Board -> Board : selectedTrip = trip\nrefreshDrivers(); refreshOffers()
+@enduml
+

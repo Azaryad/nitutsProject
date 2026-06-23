@@ -1,0 +1,30 @@
+@startuml obligation_tiers
+title Obligation tiers - course-required vs extra
+top to bottom direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam rectangle {
+  RoundCorner 8
+}
+
+package "COURSE-OBLIGATED - required by the Part B model + PATTERNS.md" as OB #DBEAFE {
+  rectangle "Entities:\nRegion, ExternalDriver, Trip, Offer, Message" as obEnt #DBEAFE
+  rectangle "Enums:\nVehicleType, TripStatus, OfferStatus, MessageDirection" as obEnum #DBEAFE
+  rectangle "RideControlSystem <<interface>>\n(external contract)" as obIface #DBEAFE
+  rectangle "Service abstractions (interfaces):\nIDriveInfoProvider, IDriverRanker,\nIMessageComposer, IReplyInterpreter,\nIRestrictionParser, IMessageChannel" as obSvcIface #DBEAFE
+  rectangle "Entity-pattern infra:\nSQL_CON, Program, mainForm, LoginPanel,\nDispatcherHomePanel, RegionPanel, ExternalDriverPanel,\nTripPanel, OfferPanel" as obInfra #DBEAFE
+  rectangle "6 UC flows:\nView Open Trips, Assign Trip to Region,\nSend Trip Offer (UC17), Respond to Trip Offer (UC07),\nForward Offer, Update Ride Control (UC08)" as obUC #DBEAFE
+}
+
+package "EXTRA - enhancements we added (not required to model)" as EX #FEF3C7 {
+  rectangle "Orchestration:\nDispatchService, ServiceFactory, Config" as exOrch #FEF3C7
+  rectangle "Live integrations:\nGoogleMapsDriveInfoProvider, ClaudeAiService,\nTwilioWhatsAppChannel, WhatsAppCloudChannel" as exLive #FEF3C7
+  rectangle "Offline fallbacks:\nStaticDriveInfoProvider, ProximityDriverRanker,\nTemplateMessageComposer, KeywordReplyInterpreter,\nKeywordRestrictionParser, LoggingChannel" as exFall #FEF3C7
+  rectangle "Integrated UI:\nDispatchBoardPanel, MessagePanel" as exBoard #FEF3C7
+  rectangle "Real inbound:\nWebhookServer + ngrok tunnel + Twilio webhook auto-update" as exReal #FEF3C7
+  rectangle "Reports:\nDriverPerformancePanel + sp_DriverPerformance" as exReport #FEF3C7
+  rectangle "Settings:\nSettingsPanel (per-service live/offline)" as exSettings #FEF3C7
+  rectangle "Visual design:\nUiTheme" as exTheme #FEF3C7
+}
+@enduml
+

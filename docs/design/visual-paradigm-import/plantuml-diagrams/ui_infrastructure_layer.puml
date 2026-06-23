@@ -1,0 +1,68 @@
+@startuml ui_infrastructure_layer
+title UI / infrastructure layer - single-window panel navigation
+top to bottom direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+hide empty members
+
+class mainForm #DBEAFE {
+  {static} -instance: mainForm
+  +showPanel(control: UserControl): void
+}
+class LoginPanel #DBEAFE
+class DispatcherHomePanel #DBEAFE
+class DispatchBoardPanel #FEF3C7 {
+  -svc: DispatchService
+  -selectedTrip: Trip
+  -ranked: List<RankedDriver>
+  {static} -_webhookServer: WebhookServer
+  +btnAssignRegion_Click()
+  +btnSendOffer_Click()
+  +btnReceiveReply_Click()
+  +btnWhatsappYes_Click()
+  +btnApprove_Click()
+  +btnDecline_Click()
+  +btnTimeout_Click()
+  +handleWebhookReply(phone: string, body: string)
+}
+class RegionPanel #DBEAFE
+class ExternalDriverPanel #DBEAFE
+class TripPanel #DBEAFE
+class OfferPanel #DBEAFE
+class MessagePanel #FEF3C7
+class SettingsPanel #FEF3C7
+class DriverPerformancePanel #FEF3C7
+class WebhookServer #FEF3C7 {
+  +OnReply: Action<string, string>
+  +Port: int
+  +Start(): void
+}
+class UiTheme <<static>> #FEF3C7 {
+  {static} +Apply(control: Control): void
+}
+
+mainForm --> LoginPanel
+mainForm --> DispatcherHomePanel
+mainForm --> DispatchBoardPanel
+LoginPanel ..> DispatcherHomePanel
+DispatcherHomePanel --> DispatchBoardPanel
+DispatcherHomePanel --> RegionPanel
+DispatcherHomePanel --> ExternalDriverPanel
+DispatcherHomePanel --> TripPanel
+DispatcherHomePanel --> OfferPanel
+DispatcherHomePanel --> MessagePanel
+DispatcherHomePanel --> SettingsPanel
+DispatcherHomePanel --> DriverPerformancePanel
+DispatchBoardPanel --> DispatchService
+DispatchBoardPanel --> WebhookServer
+WebhookServer ..> DispatchBoardPanel : OnReply callback
+SettingsPanel ..> Config
+DriverPerformancePanel ..> SQL_CON : sp_DriverPerformance
+mainForm ..> UiTheme
+
+note bottom
+  Obligated infrastructure: mainForm, login/home navigation, and entity CRUD panels.
+  Extra screens: dispatch board, audit messages, settings, reports, webhook server, and theme.
+end note
+@enduml
+

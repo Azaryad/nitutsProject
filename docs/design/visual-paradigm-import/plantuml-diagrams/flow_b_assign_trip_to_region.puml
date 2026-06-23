@@ -1,0 +1,33 @@
+@startuml flow_b_assign_trip_to_region
+title Flow B - Assign Trip to Region (includes Maps enrichment)
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor Dispatcher as D
+participant "DispatchBoardPanel" as Board
+participant Trip
+participant "SQL_CON" as SC
+database "SQL Server" as DB
+participant "DispatchService" as Svc
+participant "IDriveInfoProvider" as Maps
+
+D -> Board : select region + "Assign region"\n(btnAssignRegion_Click)
+Board -> Trip : setRegion(region)
+Board -> Trip : updateTrip() (quiet)
+Trip -> SC : execute_non_query(sp_Trip_update)
+SC -> DB : EXEC sp_Trip_update
+Board -> Svc : EnrichTrip(trip)
+Svc -> Maps : GetDriveInfo(pickup, dropoff, pickupTime)
+note over Maps
+  offline: StaticDriveInfoProvider (60 min / 0 km)
+  live: GoogleMapsDriveInfoProvider (Distance Matrix)
+end note
+Maps --> Svc : DriveInfo(minutes, km)
+Svc -> Trip : setDistanceKm / setEstimatedDurationMinutes
+Svc -> Trip : updateTrip() (quiet) -> sp_Trip_update
+note over Svc
+  distanceKm >= 100 => trip tagged long-distance
+end note
+Board -> Board : refreshDrivers(); loadTrips()
+@enduml
+

@@ -1,0 +1,49 @@
+@startuml state_offer
+title Offer - State Machine (one outreach attempt, analysis level, per OfferStatus)
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+state "Pending"          as Pending
+state "Pending Approval" as PendingApproval
+state "Accepted"         as Accepted
+state "Rejected"         as Rejected
+state "Timeout"          as Timeout
+state "Cancelled"        as Cancelled
+
+[*] --> Pending : offer created and sent\n(Offer created, WhatsApp sent)
+
+Pending --> PendingApproval : driver replies "yes"\n(soft intent, not binding)\n(Offer.markPendingApproval)
+Pending --> Accepted : driver confirms via approval link\n(Offer.accept)
+PendingApproval --> Accepted : driver confirms via approval link\n(Offer.accept)
+Pending --> Rejected : driver declines\n(Offer.reject)
+PendingApproval --> Rejected : driver declines\n(Offer.reject)
+Pending --> Timeout : no reply before expiry\n(Offer.timeout)
+PendingApproval --> Timeout : no confirmation before expiry\n(Offer.timeout)
+Pending --> Cancelled : trip escalated to manual assignment\n(Offer.cancel — called by EscalateOverdueTrips)
+PendingApproval --> Cancelled : trip escalated to manual assignment\n(Offer.cancel — called by EscalateOverdueTrips)
+
+Accepted --> [*]
+Rejected --> [*]
+Timeout --> [*]
+Cancelled --> [*]
+
+note right of Accepted
+  Accept also moves the linked Trip to
+  Confirmed → triggers Update Ride Control (UC08).
+end note
+
+note left of Rejected
+  Reject and Timeout return the linked Trip
+  to AssignedToRegion → triggers Forward Offer
+  to Next Driver (region stays assigned).
+end note
+
+note bottom of Cancelled
+  Only used during deadline escalation:
+  EscalateOverdueTrips cancels any pending/
+  pending_approval offers before calling
+  Trip.flagManualAssignment().
+  OfferStatus also declares "approval_timeout"
+  (declared, unused).
+end note
+@enduml

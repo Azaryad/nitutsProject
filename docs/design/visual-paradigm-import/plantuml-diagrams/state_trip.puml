@@ -1,0 +1,49 @@
+@startuml state_trip
+title Trip - State Machine (analysis level, per TripStatus)
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+state "Open"              as Open
+state "Assigned to Region" as AssignedToRegion
+state "Offered"           as Offered
+state "Confirmed"         as Confirmed
+state "Manual Assignment" as ManualAssignment
+
+[*] --> Open : trip imported from Ride Control
+
+Open --> AssignedToRegion : dispatcher assigns region\n(Trip.assignRegion)
+AssignedToRegion --> AssignedToRegion : dispatcher re-assigns region
+
+AssignedToRegion --> Offered : offer sent to top-ranked driver\n(Trip.offer)
+
+Offered --> Confirmed : driver accepts the trip\n(Offer.accept → Trip.confirm)
+Offered --> AssignedToRegion : offer rejected / timed out\n(Offer.reject/timeout → Trip.requeue)\nforward to next driver
+
+AssignedToRegion --> ManualAssignment : no eligible drivers remain\n(Trip.flagManualAssignment)
+Offered --> ManualAssignment : 6h-before-pickup deadline reached\nwith no assignment\n(EscalateOverdueTrips → Trip.flagManualAssignment)
+
+Confirmed --> [*]
+ManualAssignment --> [*]
+
+note right of AssignedToRegion
+  The AssignedToRegion → Offered → AssignedToRegion
+  cycle is the forwarding loop: each pass offers
+  the trip to the next ranked driver in the region.
+end note
+
+note bottom of Confirmed
+  TripStatus also declares "completed" and
+  "cancelled", but no state-machine verb in
+  the code transitions into them
+  (declared, unused).
+end note
+
+note right of ManualAssignment
+  Triggered by two events:
+  1. All ranked drivers in region exhausted.
+  2. Deadline timer fires within 6h of pickup
+     and trip still has no confirmed driver.
+  In both cases, dispatcher is notified via
+  MessageBox (notifyDispatcher).
+end note
+@enduml

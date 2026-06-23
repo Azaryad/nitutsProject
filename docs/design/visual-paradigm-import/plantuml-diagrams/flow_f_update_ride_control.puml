@@ -1,0 +1,25 @@
+@startuml flow_f_update_ride_control
+title Flow F - Update Ride Control (UC08)
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor "External Driver" as Drv
+participant "DispatchBoardPanel" as Board
+participant Offer
+participant "SQL_CON" as SC
+database "SQL Server" as DB
+participant "RideControlSystem\n<<interface>>\n(design-only)" as RC
+
+Drv -> Board : click approval link (btnApprove_Click)
+Board -> Offer : accept()
+Offer -> SC : execute_non_query(sp_Offer_accept)
+SC -> DB : BEGIN TRAN:\nOffer = accepted AND Trip = confirmed\nCOMMIT
+Offer -> Offer : in-memory mirror:\nstatus=accepted; trip.status=confirmed
+Board -> Board : log "Ride Control updated"\n(driver name, phone, vehicle)
+note over Board,RC
+  updateTripAssignment() is the external contract.
+  In the running app it is represented by
+  the confirmed-trip side effect + narration.
+end note
+@enduml
+
